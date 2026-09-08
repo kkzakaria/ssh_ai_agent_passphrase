@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Exercises every path of ssh-broker.sh that must terminate before any GPG
-# access. Runs without pass, gpg, or a reachable server: every case below is
-# expected to fail early, in the documented order, or to answer --list-hosts.
+# Exercises ssh-broker.sh without a server, a key, or a passphrase. Covers the
+# guards that stop the broker before any GPG access (in their documented
+# order), --list-hosts, and one call that gets past the guards to check the
+# log file and the stop at pass on an empty throwaway store.
 #
 # Usage: bash tests/guards.sh
 

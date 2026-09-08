@@ -151,10 +151,11 @@ sudo chmod 755 /usr/local/bin/ssh-broker
 bash tests/guards.sh
 ```
 
-Runs every path that must end before any GPG access, in a throwaway `HOME`:
-the host allowlist, the mandatory command, the dedicated known_hosts file,
-`--list-hosts`, and the log file mode. It needs no server, no key, and no
-passphrase.
+Runs in a throwaway `HOME` and needs no server, key, or passphrase. It covers
+two things: the guards that stop the broker before any GPG access (host
+allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`), and
+one call that gets past them, to check that it logs in mode 600 and then stops
+at `pass` because the throwaway store is empty.
 
 ## Threat model and limits
 
