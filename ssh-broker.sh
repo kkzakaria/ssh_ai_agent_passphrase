@@ -37,7 +37,14 @@ declare -A ALLOWED_HOSTS=(
   ["deploy.myserver.example"]="deploy:22"
 )
 
-HOST="${1:?Usage: ssh-broker.sh <host> <command...>}"
+# Discovery for the agent: list the allowed hosts and stop. Handled before
+# anything else, so it never logs and never touches GPG.
+if [[ "${1:-}" == "--list-hosts" ]]; then
+  printf '%s\n' "${!ALLOWED_HOSTS[@]}" | sort
+  exit 0
+fi
+
+HOST="${1:?Usage: ssh-broker.sh <host> <command...> | --list-hosts}"
 shift
 
 if [[ -z "${ALLOWED_HOSTS[$HOST]+x}" ]]; then

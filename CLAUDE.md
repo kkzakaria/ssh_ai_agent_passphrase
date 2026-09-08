@@ -7,26 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A two-script bash tool that lets an AI agent run SSH commands on a fixed set of hosts without ever seeing the SSH key passphrase. The passphrase lives in a `pass` store encrypted by a GPG key that exists only for this broker, both isolated from the user's personal GPG keyring and password store. The README is the design rationale; read it before changing any security posture.
 
 - `setup.sh` — run once, by a human, interactively. Creates the dedicated GPG keyring, the dedicated `pass` store, the SSH key, and stores the passphrase.
-- `ssh-broker.sh <host> <command...>` — the only entry point exposed to the agent. Checks the host against `ALLOWED_HOSTS`, requires a command, requires the host in the dedicated known_hosts file, logs the call, decrypts the passphrase via `pass`, loads the key into a throwaway `ssh-agent`, runs the command, cleans up.
+- `ssh-broker.sh <host> <command...>` — the only entry point exposed to the agent. `--list-hosts` prints the allowlist and exits before anything else. Otherwise it checks the host against `ALLOWED_HOSTS`, requires a command, requires the host in the dedicated known_hosts file, logs the call, decrypts the passphrase via `pass`, loads the key into a throwaway `ssh-agent`, runs the command, cleans up.
+- `skills/ssh-broker/SKILL.md` — Agent Skills document for the agent that *uses* the broker (not for working on this repo). It assumes a wrapper named `ssh-broker` on the PATH. Keep its error table in sync with the messages in the broker.
 
 ## Commands
 
-There is no build, test suite, or lint config. Check syntax with:
+There is no build or lint config. `shellcheck` is not installed here.
 
 ```bash
-bash -n setup.sh ssh-broker.sh
+bash -n setup.sh ssh-broker.sh   # syntax
+bash tests/guards.sh             # every guard path, in a throwaway HOME, no secrets needed
 ```
 
-`shellcheck` and `pass` are not installed on this machine, so the broker cannot be run end to end here. Exercise the guard paths without secrets, in a throwaway `HOME` so the real log is untouched. Each must fail before any GPG access, in this order:
-
-```bash
-export HOME=$(mktemp -d)
-./ssh-broker.sh not.allowed.example uptime    # "host not allowed", exit 1
-./ssh-broker.sh deploy.myserver.example       # "missing command", exit 1
-./ssh-broker.sh deploy.myserver.example uptime # known_hosts missing, exit 1, no log line
-touch "$HOME/.ssh-broker-known_hosts"
-./ssh-broker.sh deploy.myserver.example uptime # logs, then fails on "'pass' is not installed"
-```
+The guard test is the regression suite for the broker's early exits and for `--list-hosts`. It runs without a server or a real store, and it must stay that way. Any new guard in the broker gets a line there first (the `check` helper takes label, expected exit code, expected stderr substring, then the broker arguments). The end-to-end path through GPG and SSH can only be exercised manually against a real host.
 
 ## Invariants to preserve
 
