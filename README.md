@@ -59,8 +59,6 @@ agent is hijacked, it can reach **this one SSH passphrase** and nothing else.
 sudo apt install pass gnupg   # Debian / Ubuntu
 ```
 
-Script comments and messages are in French.
-
 ## Installation
 
 ```bash

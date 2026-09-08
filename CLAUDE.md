@@ -21,11 +21,11 @@ bash -n setup.sh ssh-broker.sh
 
 ```bash
 export HOME=$(mktemp -d)
-./ssh-broker.sh not.allowed.example uptime      # "hôte non autorisé", exit 1
-./ssh-broker.sh deploy.monserveur.example       # "commande manquante", exit 1
-./ssh-broker.sh deploy.monserveur.example uptime # known_hosts absent, exit 1, no log line
+./ssh-broker.sh not.allowed.example uptime    # "host not allowed", exit 1
+./ssh-broker.sh deploy.myserver.example       # "missing command", exit 1
+./ssh-broker.sh deploy.myserver.example uptime # known_hosts missing, exit 1, no log line
 touch "$HOME/.ssh-broker-known_hosts"
-./ssh-broker.sh deploy.monserveur.example uptime # logs, then fails on "'pass' n'est pas installé"
+./ssh-broker.sh deploy.myserver.example uptime # logs, then fails on "'pass' is not installed"
 ```
 
 ## Invariants to preserve
@@ -43,5 +43,5 @@ These are the whole point of the design; a change that weakens one is a security
 
 ## Conventions
 
-- Comments and user-facing messages are in French; keep new ones in French for consistency.
+- Comments, user-facing messages, and docs are in English.
 - `setup.sh` is idempotent: every step checks for existing state (key, store, SSH key) before creating it. Preserve that when adding steps.
