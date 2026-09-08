@@ -98,6 +98,7 @@ Then:
 ## Usage
 
 ```bash
+./ssh-broker.sh --list-hosts                       # allowed hosts, one per line
 ./ssh-broker.sh deploy.myserver.example "uptime"
 ```
 
@@ -110,6 +111,51 @@ re-enter the passphrase on every invocation:
 ```bash
 SSH_BROKER_FLUSH_GPG_CACHE=1 ./ssh-broker.sh deploy.myserver.example "uptime"
 ```
+
+## Agent skill
+
+`skills/ssh-broker/SKILL.md` teaches an agent how to use the broker: discover
+hosts with `--list-hosts`, run one non-interactive command per call, read the
+error messages, and route every allowlist or key change through the human. It
+follows the Agent Skills format, so it works with Claude Code and any other
+agent that reads `SKILL.md` files.
+
+Install it for Claude Code by linking the directory:
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s "$PWD/skills/ssh-broker" ~/.claude/skills/ssh-broker
+```
+
+The skill calls the broker as `ssh-broker`, so put a wrapper by that name on
+the agent's `PATH`. Same-user setup:
+
+```bash
+ln -s "$PWD/ssh-broker.sh" ~/.local/bin/ssh-broker
+```
+
+Isolated setup (see below), where the agent may only reach the broker through
+`sudo`:
+
+```bash
+sudo tee /usr/local/bin/ssh-broker >/dev/null <<'EOF'
+#!/usr/bin/env bash
+exec sudo -u sshbroker /opt/ssh-broker/ssh-broker.sh "$@"
+EOF
+sudo chmod 755 /usr/local/bin/ssh-broker
+```
+
+## Tests
+
+```bash
+bash tests/guards.sh
+```
+
+Runs in a throwaway `HOME` and needs no server, key, or passphrase. It covers
+two things: the guards that stop the broker before any GPG access (host
+allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`), and
+one call that gets past them, to check that it logs in mode 600 and then stops
+at `pass` because the throwaway store is empty.
 
 ## Threat model and limits
 
