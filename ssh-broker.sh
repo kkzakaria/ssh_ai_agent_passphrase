@@ -33,9 +33,38 @@ export PASSWORD_STORE_DIR="${HOME}/.ssh-broker-password-store"
 # to allow several automated calls in a row after a single human entry.
 FLUSH_AFTER_USE="${SSH_BROKER_FLUSH_GPG_CACHE:-0}"
 
-declare -A ALLOWED_HOSTS=(
-  ["deploy.myserver.example"]="deploy:22"
-)
+# Allowlist of destinations, one "host user port" per line, comments with #.
+# It is the operator's file: the broker only reads it, and refuses to run
+# unless the file has the same protection as this script (owned by the
+# current user, not writable by group or others, not a symlink). That check
+# is what keeps the allowlist out of the agent's hands.
+HOSTS_FILE="${HOME}/.ssh-broker-hosts"
+
+declare -A ALLOWED_HOSTS=()
+
+hosts_error() {
+  echo "Error: hosts file ${HOSTS_FILE}: $*" >&2
+  exit 1
+}
+
+load_allowed_hosts() {
+  local owner mode line host user port extra n=0
+  [[ -L "${HOSTS_FILE}" ]] && hosts_error "must not be a symlink"
+  [[ -f "${HOSTS_FILE}" ]] || hosts_error "missing (one 'host user port' per line, mode 600)"
+  read -r owner mode < <(stat -c '%u %a' "${HOSTS_FILE}")
+  [[ "${owner}" == "$(id -u)" ]] || hosts_error "must be owned by the current user"
+  (( (8#${mode} & 8#022) == 0 )) || hosts_error "must not be writable by group or others (mode ${mode})"
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    n=$((n + 1))
+    read -r host user port extra <<< "${line}"
+    [[ -z "${host}" || "${host}" == \#* ]] && continue
+    [[ -n "${user}" && -n "${port}" && -z "${extra}" ]] || hosts_error "line ${n}: expected 'host user port'"
+    [[ "${port}" =~ ^[0-9]+$ ]] || hosts_error "line ${n}: port must be a number"
+    ALLOWED_HOSTS["${host}"]="${user}:${port}"
+  done < "${HOSTS_FILE}"
+  (( ${#ALLOWED_HOSTS[@]} > 0 )) || hosts_error "no host listed"
+}
+load_allowed_hosts
 
 # Discovery for the agent: list the allowed hosts and stop. Handled before
 # anything else, so it never logs and never touches GPG.

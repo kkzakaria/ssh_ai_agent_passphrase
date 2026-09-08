@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A two-script bash tool that lets an AI agent run SSH commands on a fixed set of hosts without ever seeing the SSH key passphrase. The passphrase lives in a `pass` store encrypted by a GPG key that exists only for this broker, both isolated from the user's personal GPG keyring and password store. The README is the design rationale; read it before changing any security posture.
 
 - `setup.sh` — run once, by a human, interactively. Creates the dedicated GPG keyring, the dedicated `pass` store, the SSH key, and stores the passphrase.
-- `ssh-broker.sh <host> <command...>` — the only entry point exposed to the agent. `--list-hosts` prints the allowlist and exits before anything else. Otherwise it checks the host against `ALLOWED_HOSTS`, requires a command, requires the host in the dedicated known_hosts file, logs the call, decrypts the passphrase via `pass`, loads the key into a throwaway `ssh-agent`, runs the command, cleans up.
+- `ssh-broker.sh <host> <command...>` — the only entry point exposed to the agent. It first loads the allowlist from `~/.ssh-broker-hosts` and refuses to run unless that file is safe (see invariants). `--list-hosts` then prints the allowlist and exits. Otherwise it checks the host against the allowlist, requires a command, requires the host in the dedicated known_hosts file, logs the call, decrypts the passphrase via `pass`, loads the key into a throwaway `ssh-agent`, runs the command, cleans up.
 - `skills/ssh-broker/SKILL.md` — Agent Skills document for the agent that *uses* the broker (not for working on this repo). It assumes a wrapper named `ssh-broker` on the PATH. Keep its error table in sync with the messages in the broker.
 
 ## Commands
@@ -19,14 +19,14 @@ bash -n setup.sh ssh-broker.sh   # syntax
 bash tests/guards.sh             # every guard path, in a throwaway HOME, no secrets needed
 ```
 
-The guard test is the regression suite for the broker's early exits and for `--list-hosts`. It runs without a server or a real store, and it must stay that way. Any new guard in the broker gets a line there first (the `check` helper takes label, expected exit code, expected stderr substring, then the broker arguments). The end-to-end path through GPG and SSH can only be exercised manually against a real host.
+The guard test is the regression suite for the hosts file checks, the broker's early exits, and `--list-hosts`. It runs without a server or a real store, and it must stay that way. Any new guard in the broker gets a line there first (the `check` helper takes label, expected exit code, expected stderr substring, then the broker arguments). The end-to-end path through GPG and SSH can only be exercised manually against a real host.
 
 ## Invariants to preserve
 
 These are the whole point of the design; a change that weakens one is a security regression, not a refactor.
 
 - **Paths are hardcoded and paired.** `GNUPGHOME` and `PASSWORD_STORE_DIR` are exported to the same dedicated paths in both scripts (`~/.ssh-broker-gnupg`, `~/.ssh-broker-password-store`). Keep them identical in both files; never fall back to the user's default keyring or store.
-- **`ALLOWED_HOSTS` is the sole gate on destinations**, checked before anything else runs. Its values are `user:port`. The agent must not be able to edit it, so do not move it to an env var, a config file, or a CLI flag.
+- **The hosts file is the sole gate on destinations**, and it must be as protected as the script. `load_allowed_hosts` refuses the file unless it is a regular file (no symlink), owned by the current user, and not writable by group or others. Lines are `host user port`; a malformed line or an empty list is a hard error, never a warning. Keep the path fixed in the script: an env var or CLI flag would hand the allowlist to the agent.
 - **Host keys come only from `~/.ssh-broker-known_hosts`**, written by a human in `setup.sh` after seeing the fingerprints. The broker passes it as `UserKnownHostsFile` with `StrictHostKeyChecking=yes` and refuses to run if it is missing. Never point the broker at the shared `~/.ssh/known_hosts`.
 - **The broker restricts where, never what.** The remote command is fully agent-controlled; `RequestTTY=no`, `ForwardAgent=no`, `ClearAllForwardings=yes` close everything except the command. The "what" is enforced server-side by `restrict,command="..."` in `authorized_keys`, which `setup.sh` prints as the recommended entry.
 - **`PATH` is pinned** at the top of the broker so no binary it calls can be shadowed by the caller's environment.

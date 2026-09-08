@@ -77,20 +77,31 @@ unset PASSPHRASE
 echo "Stored, encrypted with the dedicated GPG key."
 
 echo
-echo "== 5. Host keys of the allowed servers =="
+echo "== 5. Allowed servers =="
+# Two files, always filled together: the allowlist (host user port) that
+# ssh-broker.sh reads, and the host keys it trusts. Both are the operator's
+# and must stay mode 600; the broker refuses a hosts file anyone else can
+# write to.
+HOSTS_FILE="${HOME}/.ssh-broker-hosts"
 KNOWN_HOSTS="${HOME}/.ssh-broker-known_hosts"
+if [ ! -f "${HOSTS_FILE}" ]; then
+  printf '# Allowed destinations for ssh-broker.sh: one "host user port" per line.\n' > "${HOSTS_FILE}"
+fi
+chmod 600 "${HOSTS_FILE}"
 touch "${KNOWN_HOSTS}"
 chmod 600 "${KNOWN_HOSTS}"
-echo "ssh-broker.sh refuses any connection to a host missing from ${KNOWN_HOSTS}."
-echo "For each entry of ALLOWED_HOSTS, enter host[:port] (empty to finish)."
+echo "ssh-broker.sh only connects to hosts listed in ${HOSTS_FILE},"
+echo "and only when their key is recorded in ${KNOWN_HOSTS}."
+echo "Enter each server below (empty host to finish)."
 echo "VERIFY every displayed fingerprint through an independent channel (server"
 echo "console, provider) before accepting it."
 while true; do
-  read -r -p "Host to record [host:port]: " ENTRY
-  [ -z "${ENTRY}" ] && break
-  KH_HOST="${ENTRY%%:*}"
-  KH_PORT="${ENTRY##*:}"
-  [ "${KH_PORT}" = "${ENTRY}" ] && KH_PORT=22
+  read -r -p "Host (empty to finish): " KH_HOST
+  [ -z "${KH_HOST}" ] && break
+  read -r -p "SSH user [deploy]: " KH_USER
+  KH_USER="${KH_USER:-deploy}"
+  read -r -p "Port [22]: " KH_PORT
+  KH_PORT="${KH_PORT:-22}"
   SCAN=$(ssh-keyscan -p "${KH_PORT}" -t ed25519,rsa,ecdsa "${KH_HOST}" 2>/dev/null || true)
   if [ -z "${SCAN}" ]; then
     echo "No key retrieved for ${KH_HOST}:${KH_PORT}." >&2
@@ -102,7 +113,12 @@ while true; do
   case "${OK}" in
     y|Y|yes|YES)
       printf '%s\n' "${SCAN}" >> "${KNOWN_HOSTS}"
-      echo "Recorded."
+      if awk -v h="${KH_HOST}" '$1 == h { found = 1 } END { exit !found }' "${HOSTS_FILE}"; then
+        echo "Key recorded; ${KH_HOST} was already in the hosts file."
+      else
+        printf '%s %s %s\n' "${KH_HOST}" "${KH_USER}" "${KH_PORT}" >> "${HOSTS_FILE}"
+        echo "Recorded."
+      fi
       ;;
     *) echo "Skipped." ;;
   esac
@@ -120,7 +136,8 @@ echo
 echo "Important reminder:"
 echo "- The dedicated GPG keyring is in : ${GNUPGHOME}"
 echo "- The dedicated pass store is in  : ${PASSWORD_STORE_DIR}"
+echo "- The allowed servers are in      : ${HOSTS_FILE}"
 echo "- Accepted host keys are in       : ${KNOWN_HOSTS}"
-echo "- ssh-broker.sh must use exactly these three paths (already configured)."
+echo "- ssh-broker.sh must use exactly these four paths (already configured)."
 echo "- For further hardening (OS-level isolation, key on a YubiKey), see the"
 echo "  corresponding section of the README."
