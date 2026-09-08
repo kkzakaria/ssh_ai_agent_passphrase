@@ -1,0 +1,3 @@
+# Journal d'audit du broker (par défaut dans ~/.ssh-broker.log, ignoré ici au cas où LOG_FILE pointe dans le dépôt)
+.ssh-broker.log
+*.log
