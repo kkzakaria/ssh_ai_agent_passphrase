@@ -16,12 +16,18 @@ export GNUPGHOME="${HOME}/.ssh-broker-gnupg"
 export PASSWORD_STORE_DIR="${HOME}/.ssh-broker-password-store"
 
 echo "== 0. Vérification des prérequis =="
-for bin in pass gpg gpg-agent gpg-connect-agent; do
+for bin in pass gpg gpg-agent gpg-connect-agent ssh ssh-keyscan setsid; do
   command -v "${bin}" >/dev/null 2>&1 || {
     echo "'${bin}' est requis. Debian/Ubuntu : sudo apt install pass gnupg" >&2
     exit 1
   }
 done
+# SSH_ASKPASS_REQUIRE (utilisé par ssh-broker.sh) exige OpenSSH >= 8.4.
+SSH_VER=$(ssh -V 2>&1 | sed -n 's/^OpenSSH_\([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
+if [ -z "${SSH_VER}" ] || [ "$(echo "${SSH_VER}" | awk '{print ($1 > 8 || ($1 == 8 && $2 >= 4))}')" != "1" ]; then
+  echo "OpenSSH >= 8.4 requis (SSH_ASKPASS_REQUIRE). Version détectée : $(ssh -V 2>&1)" >&2
+  exit 1
+fi
 
 echo
 echo "== 1. Trousseau GPG dédié =="
@@ -71,16 +77,50 @@ unset PASSPHRASE
 echo "Stockée, chiffrée par la clé GPG dédiée."
 
 echo
-echo "== 5. Terminé =="
+echo "== 5. Clés d'hôte des serveurs autorisés =="
+KNOWN_HOSTS="${HOME}/.ssh-broker-known_hosts"
+touch "${KNOWN_HOSTS}"
+chmod 600 "${KNOWN_HOSTS}"
+echo "ssh-broker.sh refuse toute connexion à un hôte absent de ${KNOWN_HOSTS}."
+echo "Pour chaque entrée de ALLOWED_HOSTS, saisissez hote[:port] (vide pour terminer)."
+echo "VÉRIFIEZ chaque empreinte affichée par un canal indépendant (console du"
+echo "serveur, fournisseur) avant de l'accepter."
+while true; do
+  read -r -p "Hôte à enregistrer [hote:port] : " ENTRY
+  [ -z "${ENTRY}" ] && break
+  KH_HOST="${ENTRY%%:*}"
+  KH_PORT="${ENTRY##*:}"
+  [ "${KH_PORT}" = "${ENTRY}" ] && KH_PORT=22
+  SCAN=$(ssh-keyscan -p "${KH_PORT}" -t ed25519,rsa,ecdsa "${KH_HOST}" 2>/dev/null || true)
+  if [ -z "${SCAN}" ]; then
+    echo "Aucune clé récupérée pour ${KH_HOST}:${KH_PORT}." >&2
+    continue
+  fi
+  echo "Empreintes obtenues :"
+  printf '%s\n' "${SCAN}" | ssh-keygen -lf /dev/stdin
+  read -r -p "Accepter et enregistrer ? [o/N] : " OK
+  case "${OK}" in
+    o|O|oui|OUI)
+      printf '%s\n' "${SCAN}" >> "${KNOWN_HOSTS}"
+      echo "Enregistré."
+      ;;
+    *) echo "Ignoré." ;;
+  esac
+done
+
+echo
+echo "== 6. Terminé =="
 echo "Clé publique à ajouter dans ~/.ssh/authorized_keys du serveur cible :"
 cat "${KEY_PATH}.pub"
 echo
-echo 'Restreignez cette entrée côté serveur, ex :'
-echo '  command="/opt/agent/allowed-command.sh",no-port-forwarding,no-agent-forwarding ssh-ed25519 AAAA... ci-agent'
+echo 'Restreignez cette entrée côté serveur : "restrict" coupe pty, redirections,'
+echo 'transfert d agent et X11 ; "command=" fixe la seule action possible. Ex :'
+echo '  restrict,command="/opt/agent/allowed-command.sh" ssh-ed25519 AAAA... ci-agent'
 echo
 echo "Rappel important :"
 echo "- Le trousseau GPG dédié est dans : ${GNUPGHOME}"
 echo "- Le magasin pass dédié est dans  : ${PASSWORD_STORE_DIR}"
-echo "- ssh-broker.sh doit utiliser exactement ces deux chemins (déjà configuré)."
+echo "- Les clés d'hôte acceptées sont dans : ${KNOWN_HOSTS}"
+echo "- ssh-broker.sh doit utiliser exactement ces trois chemins (déjà configuré)."
 echo "- Pour un renforcement supplémentaire (isolation au niveau OS, clé sur"
 echo "  YubiKey), voir la section correspondante du README."

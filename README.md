@@ -12,7 +12,11 @@ application et un verrouillage lié à la session.
 | Magasin `pass` | `~/.password-store` (partagé avec tous vos autres mots de passe) | **dédié** (`~/.ssh-broker-password-store`), isolé de vos autres secrets |
 | Cache GPG | TTL par défaut (souvent longue) | **TTL court** : 5 min (300s) / 15 min max (900s) |
 | Fenêtre d'exposition | dépend uniquement du TTL | **purge active** du cache possible immédiatement après chaque appel |
-| Permissions | par défaut | `umask 077`, `chmod 700` sur trousseau + magasin dédiés |
+| Permissions | par défaut | `umask 077` dans les deux scripts, `chmod 700` sur trousseau + magasin dédiés |
+| Clés d'hôte | `~/.ssh/known_hosts` partagé, modifiable par l'agent | fichier **dédié** `~/.ssh-broker-known_hosts`, rempli par un humain après vérification des empreintes |
+| Journal | fichier local seul | fichier local (600) **et** syslog via `logger`, hors de portée de l'agent ; arguments échappés |
+| Session distante | commande libre | commande obligatoire, `RequestTTY=no`, `ForwardAgent=no`, `ClearAllForwardings=yes` |
+| PATH | hérité de l'appelant | figé en tête du broker |
 
 ## Pourquoi un trousseau et un magasin dédiés
 
@@ -44,13 +48,22 @@ chmod +x setup.sh ssh-broker.sh
 sudo apt install pass gnupg   # ou : brew install pass gnupg
 
 ./setup.sh
+# -> vérifie OpenSSH >= 8.4 et la présence de setsid
 # -> génère une clé GPG dédiée (vous choisissez sa passphrase)
 # -> initialise un magasin pass dédié
 # -> génère la clé SSH et y stocke sa passphrase
+# -> enregistre les clés d'hôte de vos serveurs dans ~/.ssh-broker-known_hosts
+#    après affichage des empreintes : vérifiez-les par un canal indépendant
 
-# Ajoutez la clé publique affichée dans ~/.ssh/authorized_keys du serveur
+# Ajoutez la clé publique affichée dans ~/.ssh/authorized_keys du serveur,
+# précédée de restrict,command="..." (voir ci-dessous)
 # Éditez ALLOWED_HOSTS dans ssh-broker.sh avec vos vrais serveurs
 ```
+
+Le broker refuse tout hôte absent de `~/.ssh-broker-known_hosts` et n'y
+écrit jamais. Pour ajouter un serveur plus tard, relancez `setup.sh` (les
+étapes déjà faites sont sautées) ou ajoutez la ligne manuellement après
+vérification de l'empreinte.
 
 ## Pour aller plus loin : isolation au niveau OS
 
@@ -88,8 +101,15 @@ n'importe quelle solution purement logicielle.
 ## Points d'attention généraux (inchangés)
 
 - `~/.ssh-broker.log` trace host + commande pour audit, jamais la passphrase.
-- Limitez `command` côté serveur avec `command="..."` forcé dans
-  `authorized_keys` si l'agent ne doit exécuter qu'une action précise.
+  Ce fichier appartient à l'utilisateur qui exécute le broker, donc un agent
+  compromis peut le modifier : la copie envoyée à syslog (`logger -t
+  ssh-broker`) est la trace de référence.
+- Le broker contrôle **où** l'agent se connecte, pas **ce qu'il** exécute :
+  la commande distante est entièrement choisie par l'agent. Le seul contrôle
+  du « quoi » se fait côté serveur, dans `authorized_keys` :
+  `restrict,command="/opt/agent/allowed-command.sh"`. `restrict` coupe pty,
+  redirections, transfert d'agent et X11 ; `command=` fixe l'unique action
+  possible.
 - `ALLOWED_HOSTS` doit rester la seule source de vérité des destinations
   autorisées — ne laissez pas l'agent le modifier.
 - Sauvegardez `~/.ssh-broker-gnupg` et `~/.ssh-broker-password-store` :
