@@ -18,7 +18,8 @@ hijacked by a prompt injection.
 `ssh-broker.sh` is the only tool exposed to the agent. It takes a host and a
 command, and handles everything else:
 
-1. checks the host against an allowlist file that only the operator can write;
+1. checks the host against an allowlist file, and refuses to run unless that
+   file is protected like the script itself (owner-only writable, no symlink);
 2. requires an explicit command, never an interactive shell;
 3. checks that the host key is already present in a dedicated known_hosts file;
 4. logs the call, locally and to syslog;
@@ -153,7 +154,7 @@ bash tests/guards.sh
 
 Runs in a throwaway `HOME` and needs no server, key, or passphrase. It covers
 three things: the hosts file checks (missing, writable by others, symlink,
-malformed, empty), the guards that stop the broker before any GPG access
+foreign-owned, malformed, empty), the guards that stop the broker before any GPG access
 (allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`),
 and one call that gets past them, to check that it logs in mode 600 and then
 stops at `pass` because the throwaway store is empty.

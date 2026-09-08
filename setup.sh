@@ -84,6 +84,10 @@ echo "== 5. Allowed servers =="
 # write to.
 HOSTS_FILE="${HOME}/.ssh-broker-hosts"
 KNOWN_HOSTS="${HOME}/.ssh-broker-known_hosts"
+if [ -L "${HOSTS_FILE}" ] || { [ -e "${HOSTS_FILE}" ] && [ ! -f "${HOSTS_FILE}" ]; }; then
+  echo "Error: ${HOSTS_FILE} must be a regular file, not a symlink: ssh-broker.sh will refuse it." >&2
+  exit 1
+fi
 if [ ! -f "${HOSTS_FILE}" ]; then
   printf '# Allowed destinations for ssh-broker.sh: one "host user port" per line.\n' > "${HOSTS_FILE}"
 fi

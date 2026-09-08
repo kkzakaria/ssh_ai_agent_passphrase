@@ -49,6 +49,21 @@ rm -f "${HOSTS_FILE}"; printf '%s deploy 22\n' "${HOST_A}" > "${HOME}/real"; chm
 ln -s "${HOME}/real" "${HOSTS_FILE}"
 check "symlinked hosts file"        1 "symlink"         -- --list-hosts
 rm -f "${HOSTS_FILE}" "${HOME}/real"
+# Owner mismatch: needs a regular file owned by someone else at a fixed path.
+# A user namespace plus a bind mount of a root-owned file gives exactly that
+# without root. Skipped, not failed, where user namespaces are unavailable.
+if unshare -Urm true 2>/dev/null; then
+  touch "${HOSTS_FILE}"
+  err=$(unshare -Urm bash -c "mount --bind /etc/hostname '${HOSTS_FILE}' && bash '${BROKER}' --list-hosts" 2>&1 >/dev/null); code=$?
+  if [[ "${code}" -eq 1 && "${err}" == *"owned by the current user"* ]]; then
+    echo "ok   foreign-owned hosts file"
+  else
+    echo "FAIL foreign-owned hosts file: exit ${code}"; echo "  got: ${err}"; fail=1
+  fi
+  rm -f "${HOSTS_FILE}"
+else
+  echo "skip foreign-owned hosts file (needs unshare -Urm)"
+fi
 write_hosts "${HOST_A} deploy"
 check "malformed line refused"      1 "line 1"          -- --list-hosts
 write_hosts "${HOST_A} deploy abc"
