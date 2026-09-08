@@ -114,3 +114,7 @@ n'importe quelle solution purement logicielle.
   autorisées — ne laissez pas l'agent le modifier.
 - Sauvegardez `~/.ssh-broker-gnupg` et `~/.ssh-broker-password-store` :
   leur perte rend la passphrase SSH irrécupérable.
+
+## Licence
+
+MIT, voir [LICENSE](LICENSE).
