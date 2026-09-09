@@ -118,5 +118,15 @@ for flush in 0 1; do
     echo "FAIL cleanup trap changed exit 7 into ${code} (flush=${flush})"; fail=1
   fi
 done
+# The flush is best-effort: a failing gpg inside it must not abort cleanup.
+code=$(bash -c "set -euo pipefail; FLUSH_AFTER_USE=1; ASKPASS_SCRIPT=''; ASKPASS_DIR=''
+  ssh-agent() { :; }; gpg() { return 1; }; gpg-connect-agent() { :; }
+  ${CLEANUP_SRC}
+  trap cleanup EXIT; exit 7" 2>/dev/null; echo $?)
+if [[ "${code}" == "7" ]]; then
+  echo "ok   cleanup trap survives a failing gpg during flush"
+else
+  echo "FAIL cleanup trap with failing gpg changed exit 7 into ${code}"; fail=1
+fi
 
 exit "${fail}"

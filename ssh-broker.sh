@@ -135,7 +135,9 @@ cleanup() {
   ssh-agent -k >/dev/null 2>&1 || true
   if [[ -n "${ASKPASS_SCRIPT:-}" ]]; then rm -f "${ASKPASS_SCRIPT}"; fi
   if [[ -n "${ASKPASS_DIR:-}" ]]; then rmdir "${ASKPASS_DIR}" 2>/dev/null || true; fi
-  if [[ "${FLUSH_AFTER_USE}" == "1" ]]; then flush_gpg_cache; fi
+  # Best-effort: `|| true` also disables set -e inside the function, so a
+  # failing gpg during the purge cannot abort cleanup before return 0.
+  if [[ "${FLUSH_AFTER_USE}" == "1" ]]; then flush_gpg_cache || true; fi
   return 0
 }
 trap cleanup EXIT
