@@ -102,4 +102,31 @@ else
   echo "ok   log file is mode 600"
 fi
 
+# --- exit status contract: the EXIT trap must not clobber the remote
+# command's status. The trap runs after ssh, under set -e, so a failing
+# conditional at the end of cleanup() would turn every exit into 1. Exercise
+# cleanup() as defined in the broker, with the flush disabled and enabled.
+CLEANUP_SRC="$(awk '/^flush_gpg_cache\(\) \{/,/^\}/; /^cleanup\(\) \{/,/^\}/' "${BROKER}")"
+for flush in 0 1; do
+  code=$(bash -c "set -euo pipefail; FLUSH_AFTER_USE=${flush}; ASKPASS_SCRIPT=''; ASKPASS_DIR=''
+    ssh-agent() { :; }; gpg() { :; }; gpg-connect-agent() { :; }
+    ${CLEANUP_SRC}
+    trap cleanup EXIT; exit 7" 2>/dev/null; echo $?)
+  if [[ "${code}" == "7" ]]; then
+    echo "ok   cleanup trap preserves exit status (flush=${flush})"
+  else
+    echo "FAIL cleanup trap changed exit 7 into ${code} (flush=${flush})"; fail=1
+  fi
+done
+# The flush is best-effort: a failing gpg inside it must not abort cleanup.
+code=$(bash -c "set -euo pipefail; FLUSH_AFTER_USE=1; ASKPASS_SCRIPT=''; ASKPASS_DIR=''
+  ssh-agent() { :; }; gpg() { return 1; }; gpg-connect-agent() { :; }
+  ${CLEANUP_SRC}
+  trap cleanup EXIT; exit 7" 2>/dev/null; echo $?)
+if [[ "${code}" == "7" ]]; then
+  echo "ok   cleanup trap survives a failing gpg during flush"
+else
+  echo "FAIL cleanup trap with failing gpg changed exit 7 into ${code}"; fail=1
+fi
+
 exit "${fail}"

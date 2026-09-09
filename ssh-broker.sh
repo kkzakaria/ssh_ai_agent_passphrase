@@ -126,11 +126,19 @@ flush_gpg_cache() {
 }
 
 eval "$(ssh-agent -s)" >/dev/null
+# Runs on every exit path, under set -e. Written with if-blocks on purpose:
+# a bare `[[ cond ]] && action` as the last command returns 1 when cond is
+# false, and the trap's status would then replace the remote command's
+# exit status. The agent relies on that status, so this function must
+# always end with status 0.
 cleanup() {
   ssh-agent -k >/dev/null 2>&1 || true
-  [[ -n "${ASKPASS_SCRIPT:-}" ]] && rm -f "${ASKPASS_SCRIPT}"
-  [[ -n "${ASKPASS_DIR:-}" ]] && rmdir "${ASKPASS_DIR}" 2>/dev/null || true
-  [[ "${FLUSH_AFTER_USE}" == "1" ]] && flush_gpg_cache
+  if [[ -n "${ASKPASS_SCRIPT:-}" ]]; then rm -f "${ASKPASS_SCRIPT}"; fi
+  if [[ -n "${ASKPASS_DIR:-}" ]]; then rmdir "${ASKPASS_DIR}" 2>/dev/null || true; fi
+  # Best-effort: `|| true` also disables set -e inside the function, so a
+  # failing gpg during the purge cannot abort cleanup before return 0.
+  if [[ "${FLUSH_AFTER_USE}" == "1" ]]; then flush_gpg_cache || true; fi
+  return 0
 }
 trap cleanup EXIT
 
