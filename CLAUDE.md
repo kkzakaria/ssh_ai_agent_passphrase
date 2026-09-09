@@ -9,14 +9,16 @@ A two-script bash tool that lets an AI agent run SSH commands on a fixed set of 
 - `setup.sh` — run once, by a human, interactively. Creates the dedicated GPG keyring, the dedicated `pass` store, the SSH key, and stores the passphrase.
 - `ssh-broker.sh <host> <command...>` — the only entry point exposed to the agent. It first loads the allowlist from `~/.ssh-broker-hosts` and refuses to run unless that file is safe (see invariants). `--list-hosts` then prints the allowlist and exits. Otherwise it checks the host against the allowlist, requires a command, requires the host in the dedicated known_hosts file, logs the call, decrypts the passphrase via `pass`, loads the key into a throwaway `ssh-agent`, runs the command, cleans up.
 - `skills/ssh-broker/SKILL.md` — Agent Skills document for the agent that *uses* the broker (not for working on this repo). It assumes a wrapper named `ssh-broker` on the PATH. Keep its error table in sync with the messages in the broker.
+- `install-skill.sh` — same-user installer for the skill: symlinks `skills/ssh-broker` into `~/.claude/skills/` and `ssh-broker.sh` as `~/.local/bin/ssh-broker`. Idempotent, refuses to overwrite anything that is not already its own link. The isolated posture needs a root-installed `sudo` wrapper instead, documented in the README, and is deliberately out of this script's scope.
 
 ## Commands
 
 There is no build or lint config. `shellcheck` is not installed here.
 
 ```bash
-bash -n setup.sh ssh-broker.sh   # syntax
-bash tests/guards.sh             # every guard path, in a throwaway HOME, no secrets needed
+bash -n setup.sh ssh-broker.sh install-skill.sh   # syntax
+bash tests/guards.sh                              # every broker guard path, throwaway HOME, no secrets
+bash tests/install-skill.sh                       # the skill installer, throwaway HOME
 ```
 
 The guard test is the regression suite for the hosts file checks, the broker's early exits, and `--list-hosts`. It runs without a server or a real store, and it must stay that way. Any new guard in the broker gets a line there first (the `check` helper takes label, expected exit code, expected stderr substring, then the broker arguments). The end-to-end path through GPG and SSH can only be exercised manually against a real host.

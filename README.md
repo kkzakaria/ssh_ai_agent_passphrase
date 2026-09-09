@@ -66,7 +66,6 @@ sudo apt install pass gnupg   # Debian / Ubuntu
 ```bash
 git clone https://github.com/kkzakaria/ssh_ai_agent_passphrase.git
 cd ssh_ai_agent_passphrase
-chmod +x setup.sh ssh-broker.sh
 ./setup.sh
 ```
 
@@ -121,22 +120,27 @@ error messages, and route every allowlist or key change through the human. It
 follows the Agent Skills format, so it works with Claude Code and any other
 agent that reads `SKILL.md` files.
 
-Install it for Claude Code by linking the directory:
+`setup.sh` does not install it: the broker and the agent may live under
+different users. Run the installer as the user the agent runs as.
+
+Same-user setup:
+
+```bash
+./install-skill.sh
+```
+
+It links `skills/ssh-broker` into `~/.claude/skills/` and puts an `ssh-broker`
+command in `~/.local/bin/` that runs `ssh-broker.sh` from this checkout. It is
+safe to rerun and never overwrites a file that is not already its own link.
+
+Isolated setup (see below), where the agent may only reach the broker through
+`sudo`, the skill link is the same but the command must be a root-installed
+wrapper:
 
 ```bash
 mkdir -p ~/.claude/skills
 ln -s "$PWD/skills/ssh-broker" ~/.claude/skills/ssh-broker
 ```
-
-The skill calls the broker as `ssh-broker`, so put a wrapper by that name on
-the agent's `PATH`. Same-user setup:
-
-```bash
-ln -s "$PWD/ssh-broker.sh" ~/.local/bin/ssh-broker
-```
-
-Isolated setup (see below), where the agent may only reach the broker through
-`sudo`:
 
 ```bash
 sudo tee /usr/local/bin/ssh-broker >/dev/null <<'EOF'
@@ -149,10 +153,17 @@ sudo chmod 755 /usr/local/bin/ssh-broker
 ## Tests
 
 ```bash
-bash tests/guards.sh
+bash tests/guards.sh          # the broker
+bash tests/install-skill.sh   # the skill installer
 ```
 
-Runs in a throwaway `HOME` and needs no server, key, or passphrase. It covers
+Both run in a throwaway `HOME` and need no server, key, or passphrase.
+
+The installer test checks that both links are created, that a rerun changes
+nothing, that a foreign file at a target path is refused and left alone, and
+that `ssh-broker --list-hosts` works through the installed command.
+
+The guard test covers
 three things: the hosts file checks (missing, writable by others, symlink,
 foreign-owned, malformed, empty), the guards that stop the broker before any GPG access
 (allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`),
