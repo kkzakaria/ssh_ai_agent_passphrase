@@ -18,7 +18,8 @@ hijacked by a prompt injection.
 `ssh-broker.sh` is the only tool exposed to the agent. It takes a host and a
 command, and handles everything else:
 
-1. checks the host against a hardcoded allowlist;
+1. checks the host against an allowlist file, and refuses to run unless that
+   file is protected like the script itself (owner-only writable, no symlink);
 2. requires an explicit command, never an interactive shell;
 3. checks that the host key is already present in a dedicated known_hosts file;
 4. logs the call, locally and to syslog;
@@ -43,6 +44,7 @@ agent is hijacked, it can reach **this one SSH passphrase** and nothing else.
 | `pass` store | dedicated, in `~/.ssh-broker-password-store` |
 | GPG cache | short TTL: 5 min by default, 15 min maximum |
 | Cache purge | optional after every call (`SSH_BROKER_FLUSH_GPG_CACHE=1`) |
+| Allowlist | `~/.ssh-broker-hosts`, one `host user port` per line; the broker refuses it unless it is owned by the current user, not writable by group or others, and not a symlink |
 | Host keys | dedicated `~/.ssh-broker-known_hosts`, filled by a human after checking fingerprints, never written by the broker |
 | Log | local file in mode 600 plus a syslog copy via `logger`, arguments escaped |
 | SSH session | command required, `RequestTTY=no`, `ForwardAgent=no`, `ClearAllForwardings=yes`, `BatchMode=yes` |
@@ -74,26 +76,25 @@ chmod +x setup.sh ssh-broker.sh
 - generates a dedicated GPG key, whose passphrase you choose;
 - initializes the dedicated `pass` store;
 - generates the agent's SSH key and stores its passphrase;
-- records your servers' host keys after showing their fingerprints, which
-  you should verify through an independent channel;
+- records each server (host, SSH user, port) in the allowlist and its host
+  key after showing the fingerprints, which you should verify through an
+  independent channel;
 - prints the public key to install on the server.
 
 It is idempotent: every step skips what already exists, so rerun it to add a
-server.
+server. You can also append a `host user port` line to `~/.ssh-broker-hosts`
+by hand, as long as the host key goes into `~/.ssh-broker-known_hosts` too.
+No edit to the scripts is ever needed.
 
-Then:
+Then add the public key to `~/.ssh/authorized_keys` on the target server,
+restricted to the intended action:
 
-1. Edit `ALLOWED_HOSTS` in `ssh-broker.sh` with your servers, as
-   `["host"]="user:port"`.
-2. Add the public key to `~/.ssh/authorized_keys` on the target server,
-   restricted to the intended action:
+```
+restrict,command="/opt/agent/allowed-command.sh" ssh-ed25519 AAAA... ci-agent
+```
 
-   ```
-   restrict,command="/opt/agent/allowed-command.sh" ssh-ed25519 AAAA... ci-agent
-   ```
-
-   `restrict` disables pty, forwarding, agent forwarding, and X11. `command=`
-   fixes the one command that runs, whatever the client asks for.
+`restrict` disables pty, forwarding, agent forwarding, and X11. `command=`
+fixes the one command that runs, whatever the client asks for.
 
 ## Usage
 
@@ -152,10 +153,11 @@ bash tests/guards.sh
 ```
 
 Runs in a throwaway `HOME` and needs no server, key, or passphrase. It covers
-two things: the guards that stop the broker before any GPG access (host
-allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`), and
-one call that gets past them, to check that it logs in mode 600 and then stops
-at `pass` because the throwaway store is empty.
+three things: the hosts file checks (missing, writable by others, symlink,
+foreign-owned, malformed, empty), the guards that stop the broker before any GPG access
+(allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`),
+and one call that gets past them, to check that it logs in mode 600 and then
+stops at `pass` because the throwaway store is empty.
 
 ## Threat model and limits
 
@@ -165,8 +167,8 @@ server-side, with `restrict,command="..."`.
 
 **The broker does not protect against a process running as the same user.**
 As long as the agent and the broker share a Unix account, the agent can read
-the private key, talk to the `gpg-agent` while the cache is warm, edit
-`ALLOWED_HOSTS`, or tamper with the local log. Everything above is defense in
+the private key, talk to the `gpg-agent` while the cache is warm, edit the
+hosts file or the script itself, or tamper with the local log. Everything above is defense in
 depth; the real barrier is the isolation described below.
 
 Other points:

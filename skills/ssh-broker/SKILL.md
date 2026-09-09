@@ -41,7 +41,8 @@ command, and cleans up. You only ever see the command's output.
 
 | Message on stderr | Meaning | What to do |
 |---|---|---|
-| `host not allowed` | The host is not in the operator's allowlist. | Run `--list-hosts` and use one of those. A new host is the operator's decision: ask the user, who edits the allowlist themselves. |
+| `hosts file ...` | The operator's allowlist file is missing, empty, malformed, or has unsafe permissions. | Stop and report the message. This is an operator-side fix in `~/.ssh-broker-hosts` on the broker's side. |
+| `host not allowed` | The host is not in the operator's allowlist. | Run `--list-hosts` and use one of those. A new host is the operator's decision: ask the user, who adds a `host user port` line to the allowlist and records the host key themselves. |
 | `missing command` | You called the broker with a host only. | Pass the command. An interactive shell is never available. |
 | `.ssh-broker-known_hosts is missing` | The operator has not recorded the server's host key yet. | Tell the user to run `setup.sh` (or the `ssh-keyscan` line the message prints) after verifying the fingerprint. Retry once they confirm. |
 | `cannot load ... into ssh-agent` | Wrong passphrase in the store, or the key file is unreadable. | Stop and report it. This is an operator-side fix. |
