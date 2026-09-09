@@ -3,7 +3,11 @@
 Let an AI agent run SSH commands on servers you choose, **without ever handing
 it the key passphrase**.
 
-Two bash scripts, no exotic dependencies: `pass`, GnuPG, OpenSSH.
+Three bash scripts, no exotic dependencies: `pass`, GnuPG, OpenSSH.
+
+- `setup.sh` prepares the broker side once: keys, store, allowed servers.
+- `ssh-broker.sh` is the command the agent calls.
+- `install-skill.sh` wires the agent skill into Claude Code.
 
 ## The problem
 
@@ -48,7 +52,7 @@ agent is hijacked, it can reach **this one SSH passphrase** and nothing else.
 | Host keys | dedicated `~/.ssh-broker-known_hosts`, filled by a human after checking fingerprints, never written by the broker |
 | Log | local file in mode 600 plus a syslog copy via `logger`, arguments escaped |
 | SSH session | command required, `RequestTTY=no`, `ForwardAgent=no`, `ClearAllForwardings=yes`, `BatchMode=yes` |
-| Permissions | `umask 077` in both scripts, `chmod 700` on keyring and store |
+| Permissions | `umask 077` in every script, `chmod 700` on keyring and store |
 | `PATH` | pinned at the top of the broker |
 
 ## Prerequisites
@@ -66,8 +70,12 @@ sudo apt install pass gnupg   # Debian / Ubuntu
 ```bash
 git clone https://github.com/kkzakaria/ssh_ai_agent_passphrase.git
 cd ssh_ai_agent_passphrase
-./setup.sh
+./setup.sh           # broker side, as the user that will own the keys
+./install-skill.sh   # agent side, as the user the agent runs as (same user here)
 ```
+
+When the agent and the broker share one user, that is the whole install. The
+[Agent skill](#agent-skill) section covers the case where they do not.
 
 `setup.sh` is interactive and runs once, by a human. It:
 
@@ -133,14 +141,16 @@ It links `skills/ssh-broker` into `~/.claude/skills/` and puts an `ssh-broker`
 command in `~/.local/bin/` that runs `ssh-broker.sh` from this checkout. It is
 safe to rerun and never overwrites a file that is not already its own link.
 
-Isolated setup (see below), where the agent may only reach the broker through
-`sudo`, the skill link is the same but the command must be a root-installed
-wrapper:
+In the isolated setup (see [OS-level isolation](#os-level-isolation)), the
+agent may only reach the broker through `sudo`, so `install-skill.sh` does not
+apply. Link the skill by hand as the agent's user:
 
 ```bash
 mkdir -p ~/.claude/skills
 ln -s "$PWD/skills/ssh-broker" ~/.claude/skills/ssh-broker
 ```
+
+and install the `ssh-broker` command as root, as a wrapper around `sudo`:
 
 ```bash
 sudo tee /usr/local/bin/ssh-broker >/dev/null <<'EOF'
@@ -163,12 +173,13 @@ The installer test checks that both links are created, that a rerun changes
 nothing, that a foreign file at a target path is refused and left alone, and
 that `ssh-broker --list-hosts` works through the installed command.
 
-The guard test covers
-three things: the hosts file checks (missing, writable by others, symlink,
-foreign-owned, malformed, empty), the guards that stop the broker before any GPG access
-(allowlist, mandatory command, dedicated known_hosts file, `--list-hosts`),
-and one call that gets past them, to check that it logs in mode 600 and then
-stops at `pass` because the throwaway store is empty.
+The guard test covers three things: the hosts file checks (missing, writable
+by others, symlink, foreign-owned, malformed, empty), the guards that stop the
+broker before any GPG access (allowlist, mandatory command, dedicated
+known_hosts file, `--list-hosts`), and one call that gets past them, to check
+that it logs in mode 600 and then stops at `pass` because the throwaway store
+is empty. The foreign-owned case needs unprivileged user namespaces and is
+skipped, not failed, where they are unavailable.
 
 ## Threat model and limits
 
@@ -179,8 +190,8 @@ server-side, with `restrict,command="..."`.
 **The broker does not protect against a process running as the same user.**
 As long as the agent and the broker share a Unix account, the agent can read
 the private key, talk to the `gpg-agent` while the cache is warm, edit the
-hosts file or the script itself, or tamper with the local log. Everything above is defense in
-depth; the real barrier is the isolation described below.
+hosts file or the script itself, or tamper with the local log. Everything
+above is defense in depth; the real barrier is the isolation described below.
 
 Other points:
 

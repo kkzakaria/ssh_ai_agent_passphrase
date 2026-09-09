@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A two-script bash tool that lets an AI agent run SSH commands on a fixed set of hosts without ever seeing the SSH key passphrase. The passphrase lives in a `pass` store encrypted by a GPG key that exists only for this broker, both isolated from the user's personal GPG keyring and password store. The README is the design rationale; read it before changing any security posture.
+A small bash tool that lets an AI agent run SSH commands on a fixed set of hosts without ever seeing the SSH key passphrase. The passphrase lives in a `pass` store encrypted by a GPG key that exists only for this broker, both isolated from the user's personal GPG keyring and password store. The README is the design rationale; read it before changing any security posture.
 
 - `setup.sh` — run once, by a human, interactively. Creates the dedicated GPG keyring, the dedicated `pass` store, the SSH key, and stores the passphrase.
 - `ssh-broker.sh <host> <command...>` — the only entry point exposed to the agent. It first loads the allowlist from `~/.ssh-broker-hosts` and refuses to run unless that file is safe (see invariants). `--list-hosts` then prints the allowlist and exits. Otherwise it checks the host against the allowlist, requires a command, requires the host in the dedicated known_hosts file, logs the call, decrypts the passphrase via `pass`, loads the key into a throwaway `ssh-agent`, runs the command, cleans up.
